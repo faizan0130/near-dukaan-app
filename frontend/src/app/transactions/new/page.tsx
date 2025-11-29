@@ -39,7 +39,7 @@ const NewTransactionPage = () => {
     const searchParams = useSearchParams(); 
     const { loading: authLoading } = useAuth(); 
 
-    // Data States
+    // States for Customer Data 
     const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
     const [customerLoading, setCustomerLoading] = useState(true);
 
@@ -49,7 +49,7 @@ const NewTransactionPage = () => {
     const [customerId, setCustomerId] = useState(initialCustomerId);
     const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'payment'>('credit');
     const [items, setItems] = useState<Item[]>([{ id: 1, name: '', quantity: 1, price: 0, total: 0 }]);
-    const [paymentAmount, setPaymentAmount] = useState<string>('0'); 
+    const [paymentAmount, setPaymentAmount] = useState<string>('0'); // Kept as string for input field
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -89,11 +89,10 @@ const NewTransactionPage = () => {
     // Calculate Grand Total
     const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
-    // ⭐ FIX: Calculate finalAmount and validity in the Component Scope (using state values) ⭐
-    // Note: We use state values directly for the calculation here
-    const paymentValue = parseFloat(paymentAmount) || 0;
-    const finalAmount = paymentType === 'payment' ? paymentValue : grandTotal;
-    const isAmountValid = !isNaN(finalAmount) && finalAmount > 0;
+    // ⭐ FIX: Calculate finalAmount and validity in the Component Scope ⭐
+    // Use parseFloat(paymentAmount) to correctly calculate the numeric value
+    const finalAmount = paymentType === 'payment' ? (parseFloat(paymentAmount) || 0) : grandTotal;
+    const isAmountValid = finalAmount > 0;
     // -----------------------------------------------------------------------
 
 
@@ -130,7 +129,7 @@ const NewTransactionPage = () => {
             return;
         }
         
-        // Validation uses the component-scope finalAmount
+        // Validation uses component-scope finalAmount
         if (!isAmountValid) {
             setError("Amount must be greater than zero.");
             return;
