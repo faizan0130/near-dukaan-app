@@ -39,7 +39,7 @@ const NewTransactionPage = () => {
     const searchParams = useSearchParams(); 
     const { loading: authLoading } = useAuth(); 
 
-    // States for Customer Data 
+    // Data States
     const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
     const [customerLoading, setCustomerLoading] = useState(true);
 
@@ -353,7 +353,7 @@ const NewTransactionPage = () => {
                                         paymentType === 'cash' ? 'text-green-600' : 'text-indigo-600'
                                     }`}>
                                         <IndianRupee className="h-5 w-5 mr-1" />
-                                        {/* Use the calculated finalAmount here for display consistency */}
+                                        {/* Display calculated final amount, or 0 if invalid */}
                                         {isAmountValid ? finalAmount.toLocaleString('en-IN') : '0'}
                                     </p>
                                 </div>
@@ -366,13 +366,10 @@ const NewTransactionPage = () => {
                                     <Button
                                         type="submit"
                                         disabled={isLoading || allCustomers.length === 0 || !isAmountValid}
-                                        className="w-full h-12 text-white shadow-lg text-base"
-                                        style={{
-                                            backgroundColor: paymentType === 'credit' ? '#EF4444' : paymentType === 'cash' ? '#10B981' : '#4F46E5',
-                                            '&:hover': {
-                                                backgroundColor: paymentType === 'credit' ? '#DC2626' : paymentType === 'cash' ? '#059669' : '#4338CA',
-                                            }
-                                        }}
+                                        className={`w-full h-12 text-white shadow-lg text-base ${
+                                            paymentType === 'credit' ? 'bg-red-600 hover:bg-red-700' : 
+                                            paymentType === 'cash' ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                                        }`}
                                     >
                                         <Save className="h-5 w-5 mr-2" />
                                         {isLoading ? 'Saving...' : 'Record Transaction'}
