@@ -1,0 +1,315 @@
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Save, Package, Hash, Calendar, Trash2, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { secureApiCall } from '@/lib/api'; 
+import { useAuth } from '@/lib/authContext'; // Import useAuth
+
+interface InventoryFormProps {
+    isNew: boolean;
+}
+
+// Define the type for item data
+interface InventoryItem {
+    id?: string; // Optional for new items
+    name: string;
+    quantity: number;
+    expiryDate: string | null;
+    unitCost: number;
+    sellingPrice: number;
+}
+
+const InventoryForm: React.FC<InventoryFormProps> = ({ isNew }) => {
+    const params = useParams();
+    const router = useRouter();
+    const itemId = params.itemId as string | undefined;
+    const { loading: authLoading } = useAuth(); // Get auth loading state
+
+    const [name, setName] = useState('');
+    const [quantity, setQuantity] = useState(0);
+    const [expiryDate, setExpiryDate] = useState('');
+    const [unitCost, setUnitCost] = useState(0);
+    const [sellingPrice, setSellingPrice] = useState(0);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [formLoading, setFormLoading] = useState(!isNew); 
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // Effect to Load Data if it's an Edit Form
+    useEffect(() => {
+        if (authLoading) return; // Wait for auth
+
+        if (!isNew && itemId) {
+            const loadData = async () => {
+                setFormLoading(true);
+                setError(null);
+                try {
+                    // ⭐ GET Single Item API Call ⭐
+                    const itemData: InventoryItem = await secureApiCall(`/inventory/${itemId}`, 'GET');
+                    
+                    setName(itemData.name || '');
+                    setQuantity(itemData.quantity || 0);
+                    // Format date string for input field
+                    setExpiryDate(itemData.expiryDate ? itemData.expiryDate.split('T')[0] : ''); 
+                    setUnitCost(itemData.unitCost || 0);
+                    setSellingPrice(itemData.sellingPrice || 0);
+
+                } catch (e: any) {
+                    console.error('Failed to load item:', e);
+                    setError(e.message || 'Item not found or loading failed.');
+                }
+                setFormLoading(false);
+            };
+            loadData();
+        }
+    }, [isNew, itemId, router, authLoading]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        if (!name || quantity <= 0 || sellingPrice <= 0) {
+            setError("Name, Quantity, and Selling Price must be valid.");
+            return;
+        }
+
+        setIsLoading(true);
+
+        const itemData = {
+            name,
+            quantity: parseInt(quantity.toString()),
+            expiryDate: expiryDate || null,
+            unitCost: parseFloat(unitCost.toString()),
+            sellingPrice: parseFloat(sellingPrice.toString()),
+        };
+
+        try {
+            if (isNew) {
+                // ⭐ POST (Create) API Call ⭐
+                await secureApiCall('/inventory', 'POST', itemData);
+                alert(`Item ${name} added successfully!`);
+            } else {
+                // ⭐ PUT (Update) API Call ⭐
+                await secureApiCall(`/inventory/${itemId}`, 'PUT', itemData);
+                alert(`Item ${name} updated successfully!`);
+            }
+            
+            router.push('/inventory'); // Go back to list
+
+        } catch (err: any) {
+            console.error("Save Error:", err);
+            setError(`Item ${isNew ? 'jodne' : 'update karne'} mein error aayi: ${err.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    const handleDeleteItem = async () => {
+        if (!confirm(`Are you sure you want to delete item ${name}? This action cannot be undone.`)) {
+            return;
+        }
+
+        setIsDeleting(true);
+        setError(null);
+
+        try {
+            // ⭐ DELETE API Call ⭐
+            await secureApiCall(`/inventory/${itemId}`, 'DELETE');
+            
+            alert(`${name} successfully deleted.`);
+            router.push('/inventory'); 
+
+        } catch (err: any) {
+             console.error("Failed to delete item:", err);
+             setError("Item delete nahi ho paya.");
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+    
+    const profitMargin = (sellingPrice - unitCost) * quantity;
+
+    if (formLoading || authLoading) {
+         return (
+             <div className="flex items-center justify-center min-h-screen bg-gray-50">
+                <RefreshCw className="h-6 w-6 mr-2 animate-spin text-indigo-600" />
+                 <p className="text-gray-600">Loading Item Data...</p>
+             </div>
+         );
+    }
+    if (error && !isNew) {
+         return (
+             <div className="min-h-screen bg-gray-50 p-4 text-center">
+                <p className="text-red-700 bg-red-100 p-4 rounded-lg mt-10">{error}</p>
+                <Link href="/inventory" className="mt-4 inline-block text-indigo-600">Go to Inventory List</Link>
+             </div>
+         );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-50 pb-4">
+            
+            {/* Header Section */}
+            <header className="sticky top-0 z-20 bg-white shadow-md p-4 flex items-center border-b border-gray-200">
+                <Link href="/inventory" className="text-gray-600 hover:text-indigo-600">
+                    <ArrowLeft className="h-6 w-6" />
+                </Link>
+                <h1 className="text-xl font-bold text-gray-800 ml-4">
+                    {isNew ? 'Add New Stock Item' : 'Edit Stock Item'}
+                </h1>
+            </header>
+
+            {/* Form Section */}
+            <main className="p-4 max-w-lg mx-auto">
+                <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-lg space-y-5">
+                    
+                    {/* Item Name */}
+                    <div className="relative">
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                            Item Name *
+                        </label>
+                        <div className="flex items-center border border-gray-300 rounded-lg focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                            <Package className="h-5 w-5 text-gray-400 ml-3" />
+                            <input
+                                type="text"
+                                id="name"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Aashirvaad Atta, Amul Butter, etc."
+                                className="w-full px-3 py-3 rounded-r-lg focus:outline-none"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    {/* Quantity */}
+                    <div className="relative">
+                        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-1">
+                            Current Stock Quantity *
+                        </label>
+                        <div className="flex items-center border border-gray-300 rounded-lg focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                            <Hash className="h-5 w-5 text-gray-400 ml-3" />
+                            <input
+                                type="number"
+                                id="quantity"
+                                value={quantity}
+                                onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+                                min="0"
+                                className="w-full px-3 py-3 rounded-r-lg focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    {/* Expiry Date */}
+                    <div className="relative">
+                        <label htmlFor="expiryDate" className="block text-sm font-medium text-gray-700 mb-1">
+                            Expiry Date (Optional)
+                        </label>
+                        <div className="flex items-center border border-gray-300 rounded-lg focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                            <Calendar className="h-5 w-5 text-gray-400 ml-3" />
+                            <input
+                                type="date"
+                                id="expiryDate"
+                                value={expiryDate}
+                                onChange={(e) => setExpiryDate(e.target.value)}
+                                className="w-full px-3 py-3 rounded-r-lg focus:outline-none"
+                            />
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                            Yeh date bharenge toh **Expiry Alerts** milenge.
+                        </p>
+                    </div>
+
+                    {/* Unit Costs and Prices */}
+                    <div className="grid grid-cols-2 gap-4">
+                         {/* Unit Cost */}
+                        <div className="relative">
+                            <label htmlFor="unitCost" className="block text-sm font-medium text-gray-700 mb-1">
+                                Purchase Cost (Per Unit)
+                            </label>
+                            <div className="flex items-center border border-gray-300 rounded-lg focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                                <span className="text-gray-500 ml-3">₹</span>
+                                <input
+                                    type="number"
+                                    id="unitCost"
+                                    value={unitCost}
+                                    onChange={(e) => setUnitCost(parseFloat(e.target.value) || 0)}
+                                    min="0"
+                                    className="w-full px-3 py-3 rounded-r-lg focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                            </div>
+                        </div>
+
+                         {/* Selling Price */}
+                        <div className="relative">
+                            <label htmlFor="sellingPrice" className="block text-sm font-medium text-gray-700 mb-1">
+                                Selling Price *
+                            </label>
+                            <div className="flex items-center border border-gray-300 rounded-lg focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                                <span className="text-gray-500 ml-3">₹</span>
+                                <input
+                                    type="number"
+                                    id="sellingPrice"
+                                    value={sellingPrice}
+                                    onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)}
+                                    min="0"
+                                    className="w-full px-3 py-3 rounded-r-lg focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    required
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Profit Display (Optional, for info) */}
+                    <div className="bg-indigo-50 p-3 rounded-lg flex justify-between text-sm font-medium">
+                        <span className="text-indigo-700">Estimated Total Profit:</span>
+                        <span className="text-indigo-800 font-bold">
+                            ₹{profitMargin.toLocaleString()}
+                        </span>
+                    </div>
+
+                    {error && (
+                        <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded-lg text-sm">
+                            {error}
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className={`w-full flex items-center justify-center py-3 px-4 rounded-lg text-lg font-semibold transition duration-200 shadow-md ${
+                            isLoading 
+                                ? 'bg-indigo-400 cursor-not-allowed' 
+                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        }`}
+                    >
+                        <Save className="h-5 w-5 mr-2" />
+                        {isLoading ? 'Saving Stock...' : (isNew ? 'Save New Item' : 'Update Item')}
+                    </button>
+                    
+                    {/* Delete button only for existing items */}
+                    {!isNew && (
+                         <button
+                            type="button"
+                            onClick={handleDeleteItem}
+                            disabled={isDeleting}
+                            className={`w-full flex items-center justify-center py-2 px-4 rounded-lg text-base font-semibold transition duration-200 mt-2 ${
+                                isDeleting
+                                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                    : 'text-red-600 border border-red-300 hover:bg-red-50'
+                            }`}
+                        >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {isDeleting ? 'Deleting...' : 'Delete Item'}
+                        </button>
+                    )}
+                </form>
+            </main>
+        </div>
+    );
+};
+
+export default InventoryForm;
