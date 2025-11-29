@@ -2,7 +2,6 @@
 
 import AuthGuard from '@/lib/AuthGuard';
 import { useRouter, useSearchParams } from 'next/navigation';
-// ⭐ FIX 1: Explicitly import React and Suspense ⭐
 import React, { useState, useEffect, useCallback, Suspense } from 'react'; 
 import { ArrowLeft, Plus, Save, Trash2, IndianRupee, RefreshCw, UserCheck, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -15,6 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 
 // Define the type for customer data received from the API (for selection)
 interface Customer {
@@ -34,25 +35,23 @@ interface Item {
 
 
 const NewTransactionPage = () => {
-    // searchParams is accessed here, necessitating the wrapper below
     const router = useRouter();
     const searchParams = useSearchParams(); 
     const { loading: authLoading } = useAuth(); 
 
-    // States for Customer Data 
+    // Data States
     const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
     const [customerLoading, setCustomerLoading] = useState(true);
 
     const initialCustomerId = searchParams.get('customerId') || '';
     
-    // States for Form Data
+    // Form States
     const [customerId, setCustomerId] = useState(initialCustomerId);
-    const [customerName, setCustomerName] = useState('Select Customer');
     const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'payment'>('credit');
     const [items, setItems] = useState<Item[]>([{ id: 1, name: '', quantity: 1, price: 0, total: 0 }]);
+    const [paymentAmount, setPaymentAmount] = useState<string>('0'); // Set as string '0' for input consistency
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [paymentAmount, setPaymentAmount] = useState<number>(0); 
 
     
     // --- Fetch Customer List for Selection (API Integration) ---
@@ -68,11 +67,9 @@ const NewTransactionPage = () => {
                 const customer = data.find(c => c.id === initialId);
                 if (customer) {
                     setCustomerId(customer.id);
-                    setCustomerName(customer.name);
                 }
             } else if (data.length > 0 && !customerId) {
                 setCustomerId(data[0].id);
-                setCustomerName(data[0].name);
             }
         } catch (err: any) {
             console.error("Failed to fetch customer list:", err);
@@ -92,33 +89,38 @@ const NewTransactionPage = () => {
     // Calculate Grand Total
     const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
+    // ⭐ FIX: Calculate finalAmount at the component level for UI access ⭐
+    const finalAmount = paymentType === 'payment' ? parseFloat(paymentAmount) : grandTotal;
+    const isAmountValid = !isNaN(finalAmount) && finalAmount > 0;
+    // -----------------------------------------------------------------------
+
+
     // --- Item List Management (Logic remains the same) ---
 
     const updateItem = useCallback((id: number, field: keyof Item, value: any) => {
         setItems(prevItems => prevItems.map(item => {
             if (item.id === id) {
-                const updatedItem = { ...item, [field]: value };
+                const updated = { ...item, [field]: value };
                 if (field === 'quantity' || field === 'price') {
-                    updatedItem.total = updatedItem.quantity * updatedItem.price;
+                    updated.total = (updated.quantity || 0) * (updated.price || 0);
                 }
-                return updatedItem;
+                return updated;
             }
             return item;
         }));
     }, []);
 
     const addItem = () => {
-        const newId = items.length ? items[items.length - 1].id + 1 : 1;
-        setItems(prevItems => [...prevItems, { id: newId, name: '', quantity: 1, price: 0, total: 0 }]);
+        const newId = items.length ? Math.max(...items.map(i => i.id)) + 1 : 1;
+        setItems(prev => [...prev, { id: newId, name: '', quantity: 1, price: 0, total: 0 }]);
     };
 
     const removeItem = (id: number) => {
-        setItems(prevItems => prevItems.filter(item => item.id !== id));
+        setItems(prev => prev.filter(item => item.id !== id));
     };
 
-    // --- Form Submission (API Integration) ---
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    // --- Submit (API Integration) ---
+    const handleSubmit = async () => {
         setError(null);
 
         if (!customerId) {
@@ -126,9 +128,9 @@ const NewTransactionPage = () => {
             return;
         }
         
-        let finalAmount = paymentType === 'payment' ? paymentAmount : grandTotal;
-        if (finalAmount <= 0) {
-            setError(`Total amount or Payment amount must be greater than zero.`);
+        // Validation using calculated value
+        if (!isAmountValid) {
+            setError("Amount must be greater than zero.");
             return;
         }
 
@@ -136,34 +138,27 @@ const NewTransactionPage = () => {
 
         const transactionData = {
             customerId,
-            totalAmount: finalAmount,
+            totalAmount: finalAmount, 
             paymentType,
-            items: paymentType !== 'payment' ? items.filter(item => item.name && item.total > 0) : [],
+            items: paymentType !== 'payment' ? items.filter(i => i.name) : [],
             notes: (paymentType === 'payment' ? 'Payment received' : 'Items purchased'), 
         };
 
         try {
-            await secureApiCall('/transactions', 'POST', transactionData); 
-            
+            await secureApiCall('/transactions', 'POST', transactionData);
             alert(`${paymentType.toUpperCase()} Transaction saved! Total: ₹${finalAmount.toLocaleString('en-IN')}.`);
-
             router.push(`/customers/${customerId}`);
-
         } catch (err: any) {
-            console.error("Transaction Error:", err);
+            console.error("Txn Error:", err);
             setError(err.message || "Transaction save nahi ho paya. Please try again.");
         } finally {
             setIsLoading(false);
         }
     };
-    
+
     // Customer Dropdown/Selector Handler for Shadcn Select
     const handleSelectChange = (id: string) => {
-        const customer = allCustomers.find(c => c.id === id);
-        if (customer) {
-            setCustomerId(id);
-            setCustomerName(customer.name);
-        }
+        setCustomerId(id);
     };
 
 
@@ -189,7 +184,7 @@ const NewTransactionPage = () => {
                 </header>
 
                 <main className="p-4 max-w-lg mx-auto">
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6">
                         
                         {/* 1. Customer Selection */}
                         <Card className="shadow-sm border-slate-200">
@@ -228,39 +223,34 @@ const NewTransactionPage = () => {
                         </Card>
 
                         {/* 2. Transaction Type Toggle */}
-                        <Card className="shadow-sm border-slate-200">
-                            <CardHeader className='pb-3'>
-                                <CardTitle className="text-lg">Transaction Type</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <Button
-                                        type="button"
-                                        onClick={() => setPaymentType('credit')}
-                                        variant={paymentType === 'credit' ? 'default' : 'secondary'}
-                                        className={paymentType === 'credit' ? 'bg-red-500 hover:bg-red-600' : 'text-slate-600'}
-                                    >
-                                        Udhaar (Credit)
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        onClick={() => setPaymentType('cash')}
-                                        variant={paymentType === 'cash' ? 'default' : 'secondary'}
-                                        className={paymentType === 'cash' ? 'bg-green-500 hover:bg-green-600' : 'text-slate-600'}
-                                    >
-                                        Naqad (Cash)
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        onClick={() => setPaymentType('payment')}
-                                        variant={paymentType === 'payment' ? 'default' : 'secondary'}
-                                        className={paymentType === 'payment' ? 'bg-indigo-600 hover:bg-indigo-700' : 'text-slate-600'}
-                                    >
-                                        Payment Received
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <div className='w-full'>
+                            <TabsList className="grid w-full grid-cols-3 bg-slate-200 p-1 rounded-xl h-12">
+                                <TabsTrigger 
+                                    value="credit" 
+                                    onClick={() => setPaymentType('credit')}
+                                    className="rounded-lg data-[state=active]:bg-red-500 data-[state=active]:text-white transition-all"
+                                    data-state={paymentType === 'credit' ? 'active' : 'inactive'}
+                                >
+                                    Udhaar
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="cash" 
+                                    onClick={() => setPaymentType('cash')}
+                                    className="rounded-lg data-[state=active]:bg-green-600 data-[state=active]:text-white transition-all"
+                                    data-state={paymentType === 'cash' ? 'active' : 'inactive'}
+                                >
+                                    Cash Sale
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="payment" 
+                                    onClick={() => setPaymentType('payment')}
+                                    className="rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white transition-all"
+                                    data-state={paymentType === 'payment' ? 'active' : 'inactive'}
+                                >
+                                    Payment In
+                                </TabsTrigger>
+                            </TabsList>
+                        </div>
 
 
                         {/* 3. Itemized List Input / Payment Amount Input */}
@@ -280,7 +270,7 @@ const NewTransactionPage = () => {
                                     </CardHeader>
                                     <CardContent className='space-y-4 pt-0'>
                                         {items.map((item) => (
-                                            <div key={item.id} className="border border-slate-200 p-3 rounded-lg bg-slate-50">
+                                            <div key={item.id} className="relative border border-slate-200 p-3 rounded-lg bg-slate-50">
                                                 {/* Item Name Input */}
                                                 <div className="mb-2">
                                                     <Input
@@ -336,7 +326,7 @@ const NewTransactionPage = () => {
                                                 type="number"
                                                 id="paymentAmount"
                                                 value={paymentAmount}
-                                                onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                                                onChange={(e) => setPaymentAmount(e.target.value)}
                                                 placeholder="Enter amount received"
                                                 min="1"
                                                 className="w-full pl-10 focus-visible:ring-indigo-500"
@@ -349,34 +339,41 @@ const NewTransactionPage = () => {
                         </Card>
 
                         {/* 4. Grand Total Footer / Submit */}
-                        <Card className="shadow-xl border-t-4 border-indigo-600 sticky bottom-0 z-10">
-                            <CardContent className='p-4 space-y-3'>
-                                {paymentType !== 'payment' && (
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-lg font-semibold text-slate-800">Grand Total</p>
-                                        <p className="text-2xl font-extrabold text-indigo-600 flex items-center">
-                                            <IndianRupee className="h-5 w-5 mr-1" />
-                                            {grandTotal.toLocaleString('en-IN')}
-                                        </p>
-                                    </div>
-                                )}
+                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
+                             <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
+                                
+                                {/* Total Display */}
+                                <div>
+                                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                                        {paymentType === 'payment' ? 'Amount Received' : 'Grand Total'}
+                                    </p>
+                                    <p className={`text-2xl font-bold flex items-center ${
+                                        paymentType === 'credit' ? 'text-red-600' : 
+                                        paymentType === 'cash' ? 'text-green-600' : 'text-indigo-600'
+                                    }`}>
+                                        <IndianRupee className="h-5 w-5 mr-1" />
+                                        {finalAmount.toLocaleString('en-IN')}
+                                    </p>
+                                </div>
 
-                                {error && (
-                                    <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
-                                        {error}
-                                    </div>
-                                )}
+                                {/* Error/Submit Button */}
+                                <div className='flex-1'>
+                                    {error && (
+                                        <p className="text-red-600 text-xs mb-2 text-right">{error}</p>
+                                    )}
+                                    <Button
+                                        type="submit"
+                                        disabled={isLoading || allCustomers.length === 0 || (!finalAmount || finalAmount <= 0)}
+                                        className="w-full h-12 text-white shadow-lg text-base"
+                                        style={{ backgroundColor: paymentType === 'credit' ? '#EF4444' : paymentType === 'cash' ? '#10B981' : '#4F46E5' }}
+                                    >
+                                        <Save className="h-5 w-5 mr-2" />
+                                        {isLoading ? 'Saving...' : 'Record Transaction'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
 
-                                <Button
-                                    type="submit"
-                                    disabled={isLoading || allCustomers.length === 0 || (paymentType !== 'payment' && grandTotal <= 0)}
-                                    className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg text-base"
-                                >
-                                    <Save className="h-5 w-5 mr-2" />
-                                    {isLoading ? 'Saving Transaction...' : 'Record Transaction'}
-                                </Button>
-                            </CardContent>
-                        </Card>
                     </form>
                 </main>
             </div>
