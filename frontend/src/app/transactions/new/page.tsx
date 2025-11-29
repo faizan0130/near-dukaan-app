@@ -2,7 +2,7 @@
 
 import AuthGuard from '@/lib/AuthGuard';
 import { useRouter, useSearchParams } from 'next/navigation';
-// ⭐ FIX: Add Suspense and ensure React is explicitly imported ⭐
+// ⭐ FIX 1: Explicitly import React and Suspense ⭐
 import React, { useState, useEffect, useCallback, Suspense } from 'react'; 
 import { ArrowLeft, Plus, Save, Trash2, IndianRupee, RefreshCw, UserCheck, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -34,7 +34,7 @@ interface Item {
 
 
 const NewTransactionPage = () => {
-    // ⭐ FIX: searchParams is accessed here, necessitating the wrapper below ⭐
+    // searchParams is accessed here, necessitating the wrapper below
     const router = useRouter();
     const searchParams = useSearchParams(); 
     const { loading: authLoading } = useAuth(); 
@@ -384,4 +384,16 @@ const NewTransactionPage = () => {
     );
 };
 
-export default NewTransactionPage;
+// ⭐ WRAPPER COMPONENT: Added Suspense Boundary for Vercel Build Fix ⭐
+const NewTransactionWrapper = () => (
+    <Suspense fallback={
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+            <RefreshCw className="h-8 w-8 mb-4 animate-spin text-indigo-600" />
+            <p className="text-slate-500 font-medium">Loading transaction interface...</p>
+        </div>
+    }>
+        <NewTransactionPage />
+    </Suspense>
+);
+
+export default NewTransactionWrapper;
