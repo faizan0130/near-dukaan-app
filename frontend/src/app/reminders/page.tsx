@@ -5,8 +5,8 @@ import BottomNav from '@/components/BottomNav';
 import { ArrowLeft, MessageCircle, AlertTriangle, IndianRupee, Clock, Package, RefreshCw, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
-import { secureApiCall } from '@/lib/api'; // NEW: Import API helper
-import { useAuth } from '@/lib/authContext'; // NEW: Import useAuth
+import { secureApiCall } from '@/lib/api'; 
+import { useAuth } from '@/lib/authContext'; 
 
 // ⭐ SHADCN IMPORTS ⭐
 import { Button } from '@/components/ui/button';
@@ -16,31 +16,43 @@ import { Badge } from '@/components/ui/badge';
 // --- TYPES ---
 interface Reminder {
     id: string;
-    type: 'Payment Due' | 'Inventory Expiry' | 'Low Stock';
+    // Backend Queue se aane wala data
+    type: string; // Will come as 'Payment Due', 'Inventory Expiry', etc.
     customerName?: string; 
     itemName?: string;
     amountDue?: number;
     status: string;
     createdAt: any;
+    customerId?: string; // Used for linking to customer detail
 }
 
 // --- HELPER COMPONENT: Reminder Card (Upgraded Shadcn Look) ---
 const ReminderCard = ({ reminder }: { reminder: Reminder }) => {
-    // Note: Since the Backend doesn't send "Inventory Expiry" or "Low Stock" yet,
-    // we assume the fetched data is primarily Payment Dues from the Queue.
+    // Note: We use includes() because we assume the type is a string from the API
     const isPaymentDue = reminder.type.includes('Payment');
+    const isInventoryAlert = reminder.type.includes('Inventory') || reminder.type.includes('Stock');
     
     let icon: React.FC<any> = IndianRupee;
     let titleColor: string = 'text-red-700';
-    let link: string = `/customers/${(reminder as any).customerId}`; // Link to Customer Detail
-    let detailText: string = `₹${reminder.amountDue?.toLocaleString() || 'N/A'} due. Status: ${reminder.status}`;
+    let link: string = reminder.customerId ? `/customers/${reminder.customerId}` : '/reminders'; // Link to Customer or Default
+    let detailText: string;
 
-    if (reminder.type.includes('Inventory') || reminder.type.includes('Stock')) {
-         icon = Package;
-         titleColor = 'text-orange-700';
-         link = `/inventory/`; // Placeholder for Inventory link
-         detailText = reminder.detail || `Item: ${reminder.itemName}, Status: ${reminder.status}`;
+    if (isPaymentDue) {
+        icon = IndianRupee;
+        titleColor = 'text-red-700';
+        detailText = `₹${reminder.amountDue?.toLocaleString('en-IN') || 'N/A'} due from ${reminder.customerName || 'customer'}.`;
+    } else if (isInventoryAlert) {
+        icon = Package;
+        titleColor = 'text-orange-700';
+        link = '/inventory'; // Link to Inventory List for action
+        detailText = `Item: ${reminder.itemName || 'Product'}. Status: ${reminder.status}`;
+    } else {
+        // Fallback for unexpected types
+        icon = AlertTriangle;
+        titleColor = 'text-slate-600';
+        detailText = `Action Required. Status: ${reminder.status}`;
     }
+
 
     return (
         <Link 
@@ -59,7 +71,7 @@ const ReminderCard = ({ reminder }: { reminder: Reminder }) => {
                                 {reminder.type}
                             </h3>
                             <p className="text-sm text-slate-900 font-medium mt-0.5">
-                                {reminder.customerName || reminder.itemName}
+                                {reminder.customerName || reminder.itemName || 'N/A'}
                             </p>
                             <p className="text-xs text-slate-500 mt-0.5">
                                 {detailText}
@@ -97,18 +109,23 @@ const RemindersPage = () => {
             // ⭐ CALL THE NOTIFICATION QUEUE API ⭐
             const data: Reminder[] = await secureApiCall('/notifications', 'GET');
             
-            // Map the data to include display logic (for now, backend only returns queue items)
+            // Map the data to ensure structure matches UI components
             const mappedReminders = data.map(item => ({
                 ...item,
-                type: item.type || 'Payment Due', // Fallback for type
-                detail: item.amountDue ? `₹${item.amountDue.toLocaleString()} due.` : 'Action Required.',
-                link: `/customers/${item.customerId}`, // Assuming linking to customer detail
+                type: item.type || 'Payment Due', 
+                amountDue: item.amountDue || 0,
+                // Add customerId and itemName for mapping logic in ReminderCard
+                customerId: item.customerId, 
+                itemName: item.itemName || 'N/A',
+                // We use dummy status for now, as backend provides only 'Pending'
+                status: item.status || 'Pending', 
             }));
 
             setReminders(mappedReminders);
         } catch (err: any) {
             console.error("Failed to fetch reminders:", err);
-            setError("Reminders list load nahi ho payi. Please check API connection.");
+            // This error will likely be related to the missing Firestore Index on the notification_queue collection
+            setError("Reminders list load nahi ho payi. (Missing Index or API Issue)"); 
         } finally {
             setIsLoading(false);
         }
@@ -166,9 +183,8 @@ const RemindersPage = () => {
                     )}
                     
                     <div className="space-y-4">
-                        {reminders.map((reminder, index) => (
-                            // Note: We need a unique ID for the key, assuming API returns it
-                            <ReminderCard key={reminder.id || index} reminder={reminder} />
+                        {reminders.map((reminder) => (
+                            <ReminderCard key={reminder.id} reminder={reminder} />
                         ))}
                     </div>
                     
