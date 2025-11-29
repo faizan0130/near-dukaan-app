@@ -2,11 +2,12 @@
 
 import AuthGuard from '@/lib/AuthGuard';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+// ⭐ FIX: Add Suspense and ensure React is explicitly imported ⭐
+import React, { useState, useEffect, useCallback, Suspense } from 'react'; 
 import { ArrowLeft, Plus, Save, Trash2, IndianRupee, RefreshCw, UserCheck, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
-import { secureApiCall } from '@/lib/api'; // NEW: Import API helper
-import { useAuth } from '@/lib/authContext'; // NEW: Import useAuth
+import { secureApiCall } from '@/lib/api';
+import { useAuth } from '@/lib/authContext'; 
 
 // ⭐ SHADCN IMPORTS ⭐
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
 
 // Define the type for customer data received from the API (for selection)
 interface Customer {
@@ -34,37 +34,35 @@ interface Item {
 
 
 const NewTransactionPage = () => {
+    // ⭐ FIX: searchParams is accessed here, necessitating the wrapper below ⭐
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const { loading: authLoading } = useAuth(); // NEW: Get auth loading state
+    const searchParams = useSearchParams(); 
+    const { loading: authLoading } = useAuth(); 
 
-    // States for Customer Data (Now dynamic fetching, not dummy data)
-    const [allCustomers, setAllCustomers] = useState<Customer[]>([]); // To hold all fetched customers
-    const [customerLoading, setCustomerLoading] = useState(true); // Loading state for customer list
+    // States for Customer Data 
+    const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+    const [customerLoading, setCustomerLoading] = useState(true);
 
-    // Get customerId from URL query (passed from Customer Detail Page)
     const initialCustomerId = searchParams.get('customerId') || '';
     
     // States for Form Data
     const [customerId, setCustomerId] = useState(initialCustomerId);
     const [customerName, setCustomerName] = useState('Select Customer');
-    const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'payment'>('credit'); // Added 'payment'
+    const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'payment'>('credit');
     const [items, setItems] = useState<Item[]>([{ id: 1, name: '', quantity: 1, price: 0, total: 0 }]);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [paymentAmount, setPaymentAmount] = useState<number>(0); // State for payment type amount
+    const [paymentAmount, setPaymentAmount] = useState<number>(0); 
 
     
     // --- Fetch Customer List for Selection (API Integration) ---
     const fetchCustomers = useCallback(async () => {
-        if(authLoading) return; // Wait for auth
+        if(authLoading) return;
         setCustomerLoading(true);
         try {
-            // ⭐ API Call to get all customers ⭐
             const data: Customer[] = await secureApiCall('/customers', 'GET');
             setAllCustomers(data);
             
-            // Set initial customer if ID is present in URL
             const initialId = searchParams.get('customerId');
             if (initialId) {
                 const customer = data.find(c => c.id === initialId);
@@ -73,7 +71,6 @@ const NewTransactionPage = () => {
                     setCustomerName(customer.name);
                 }
             } else if (data.length > 0 && !customerId) {
-                 // Set first customer as default if none selected and no ID in URL
                 setCustomerId(data[0].id);
                 setCustomerName(data[0].name);
             }
@@ -95,14 +92,13 @@ const NewTransactionPage = () => {
     // Calculate Grand Total
     const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
-    // --- Item List Management (Remains the same logic) ---
+    // --- Item List Management (Logic remains the same) ---
 
     const updateItem = useCallback((id: number, field: keyof Item, value: any) => {
         setItems(prevItems => prevItems.map(item => {
             if (item.id === id) {
                 const updatedItem = { ...item, [field]: value };
                 if (field === 'quantity' || field === 'price') {
-                    // Recalculate total for this item
                     updatedItem.total = updatedItem.quantity * updatedItem.price;
                 }
                 return updatedItem;
@@ -144,16 +140,13 @@ const NewTransactionPage = () => {
             paymentType,
             items: paymentType !== 'payment' ? items.filter(item => item.name && item.total > 0) : [],
             notes: (paymentType === 'payment' ? 'Payment received' : 'Items purchased'), 
-            // date: new Date().toISOString(), // Backend will handle createdAt timestamp
         };
 
         try {
-            // ⭐ API Call to record transaction ⭐
             await secureApiCall('/transactions', 'POST', transactionData); 
             
-            alert(`${paymentType.toUpperCase()} Transaction saved! Total: ₹${finalAmount.toLocaleString()}.`);
+            alert(`${paymentType.toUpperCase()} Transaction saved! Total: ₹${finalAmount.toLocaleString('en-IN')}.`);
 
-            // Redirect to customer detail page after saving
             router.push(`/customers/${customerId}`);
 
         } catch (err: any) {
