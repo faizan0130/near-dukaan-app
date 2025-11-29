@@ -1,8 +1,8 @@
 'use client';
 
+import React, { useState, useEffect, useCallback, Suspense } from 'react'; 
 import AuthGuard from '@/lib/AuthGuard';
 import { useRouter, useSearchParams } from 'next/navigation';
-import React, { useState, useEffect, useCallback, Suspense } from 'react'; 
 import { ArrowLeft, Plus, Save, Trash2, IndianRupee, RefreshCw, UserCheck, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
 import { secureApiCall } from '@/lib/api';
@@ -39,7 +39,7 @@ const NewTransactionPage = () => {
     const searchParams = useSearchParams(); 
     const { loading: authLoading } = useAuth(); 
 
-    // Data States
+    // States for Customer Data 
     const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
     const [customerLoading, setCustomerLoading] = useState(true);
 
@@ -49,7 +49,7 @@ const NewTransactionPage = () => {
     const [customerId, setCustomerId] = useState(initialCustomerId);
     const [paymentType, setPaymentType] = useState<'cash' | 'credit' | 'payment'>('credit');
     const [items, setItems] = useState<Item[]>([{ id: 1, name: '', quantity: 1, price: 0, total: 0 }]);
-    const [paymentAmount, setPaymentAmount] = useState<string>('0'); // Set as string '0' for input consistency
+    const [paymentAmount, setPaymentAmount] = useState<string>('0'); 
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -89,8 +89,9 @@ const NewTransactionPage = () => {
     // Calculate Grand Total
     const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
-    // ⭐ FIX: Calculate finalAmount at the component level for UI access ⭐
-    const finalAmount = paymentType === 'payment' ? parseFloat(paymentAmount) : grandTotal;
+    // ⭐ FIX: Calculate finalAmount and validity in the Component Scope ⭐
+    const paymentValue = parseFloat(paymentAmount) || 0;
+    const finalAmount = paymentType === 'payment' ? paymentValue : grandTotal;
     const isAmountValid = !isNaN(finalAmount) && finalAmount > 0;
     // -----------------------------------------------------------------------
 
@@ -352,7 +353,8 @@ const NewTransactionPage = () => {
                                         paymentType === 'cash' ? 'text-green-600' : 'text-indigo-600'
                                     }`}>
                                         <IndianRupee className="h-5 w-5 mr-1" />
-                                        {finalAmount.toLocaleString('en-IN')}
+                                        {/* Use the calculated finalAmount here for display consistency */}
+                                        {isAmountValid ? finalAmount.toLocaleString('en-IN') : '0'}
                                     </p>
                                 </div>
 
@@ -363,9 +365,14 @@ const NewTransactionPage = () => {
                                     )}
                                     <Button
                                         type="submit"
-                                        disabled={isLoading || allCustomers.length === 0 || (!finalAmount || finalAmount <= 0)}
+                                        disabled={isLoading || allCustomers.length === 0 || !isAmountValid}
                                         className="w-full h-12 text-white shadow-lg text-base"
-                                        style={{ backgroundColor: paymentType === 'credit' ? '#EF4444' : paymentType === 'cash' ? '#10B981' : '#4F46E5' }}
+                                        style={{
+                                            backgroundColor: paymentType === 'credit' ? '#EF4444' : paymentType === 'cash' ? '#10B981' : '#4F46E5',
+                                            '&:hover': {
+                                                backgroundColor: paymentType === 'credit' ? '#DC2626' : paymentType === 'cash' ? '#059669' : '#4338CA',
+                                            }
+                                        }}
                                     >
                                         <Save className="h-5 w-5 mr-2" />
                                         {isLoading ? 'Saving...' : 'Record Transaction'}
