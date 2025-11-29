@@ -89,7 +89,8 @@ const NewTransactionPage = () => {
     // Calculate Grand Total
     const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
 
-    // ⭐ FIX: Calculate finalAmount and validity in the Component Scope ⭐
+    // ⭐ FIX: Calculate finalAmount and validity in the Component Scope (using state values) ⭐
+    // Note: We use state values directly for the calculation here
     const paymentValue = parseFloat(paymentAmount) || 0;
     const finalAmount = paymentType === 'payment' ? paymentValue : grandTotal;
     const isAmountValid = !isNaN(finalAmount) && finalAmount > 0;
@@ -129,7 +130,7 @@ const NewTransactionPage = () => {
             return;
         }
         
-        // Validation using calculated value
+        // Validation uses the component-scope finalAmount
         if (!isAmountValid) {
             setError("Amount must be greater than zero.");
             return;
@@ -353,7 +354,6 @@ const NewTransactionPage = () => {
                                         paymentType === 'cash' ? 'text-green-600' : 'text-indigo-600'
                                     }`}>
                                         <IndianRupee className="h-5 w-5 mr-1" />
-                                        {/* Display calculated final amount, or 0 if invalid */}
                                         {isAmountValid ? finalAmount.toLocaleString('en-IN') : '0'}
                                     </p>
                                 </div>
