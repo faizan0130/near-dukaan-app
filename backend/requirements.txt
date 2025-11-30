@@ -1,4 +1,6 @@
 Flask
 python-dotenv
 gunicorn
-Flask-CORS  
+Flask-CORS
+firebase-admin
+
