@@ -1,8 +1,7 @@
 import os
 import json
-# --- NEW IMPORTS ---
+import base64
 from datetime import datetime, date 
-# -------------------
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -13,10 +12,8 @@ from google.cloud.firestore import FieldFilter
 # Import Token Verification Middleware
 from auth_middleware import verify_token
 
-
 # Load environment variables
 load_dotenv()
-
 
 # ----------------------------------------------------------
 # 1. Flask App and CORS Setup
@@ -26,31 +23,54 @@ app = Flask(__name__)
 
 # Reading CORS config for safer initialization
 cors_origins_str = os.getenv("CORS_ORIGINS", "*")
-origins_list = cors_origins_str.strip('[""]').split(',')
+# Handle both comma-separated and JSON array formats
+if cors_origins_str.startswith('['):
+    origins_list = json.loads(cors_origins_str)
+else:
+    origins_list = [origin.strip() for origin in cors_origins_str.split(',')]
 
 CORS(app, resources={r"/api/*": {"origins": origins_list}})
 
-
 # ----------------------------------------------------------
-# 2. Firebase Admin SDK Initialization
+# 2. Firebase Admin SDK Initialization (Render Compatible)
 # ----------------------------------------------------------
 
-CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH")
+def initialize_firebase():
+    """Initialize Firebase with support for both local and Render environments."""
+    
+    # Try Base64 credentials first (Render deployment)
+    firebase_creds_base64 = os.getenv("FIREBASE_CREDENTIALS")
+    
+    if firebase_creds_base64:
+        try:
+            # Decode base64 credentials
+            creds_json = base64.b64decode(firebase_creds_base64).decode('utf-8')
+            creds_dict = json.loads(creds_json)
+            cred = credentials.Certificate(creds_dict)
+            firebase_admin.initialize_app(cred)
+            print("✅ Firebase initialized with Base64 credentials (Render mode)")
+            return firestore.client()
+        except Exception as e:
+            print(f"⚠️ Failed to initialize with Base64 credentials: {e}")
+    
+    # Fallback to local file (Local development)
+    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "serviceAccountKey.json")
+    
+    if os.path.exists(credentials_path):
+        try:
+            cred = credentials.Certificate(credentials_path)
+            firebase_admin.initialize_app(cred)
+            print(f"✅ Firebase initialized with file: {credentials_path}")
+            return firestore.client()
+        except Exception as e:
+            print(f"❌ Failed to initialize with file credentials: {e}")
+            exit(1)
+    else:
+        print("❌ FATAL ERROR: No Firebase credentials found!")
+        print("Please set FIREBASE_CREDENTIALS (base64) or provide serviceAccountKey.json")
+        exit(1)
 
-if not CREDENTIALS_PATH or not os.path.exists(CREDENTIALS_PATH):
-    print("FATAL ERROR: Firebase credentials file not found.")
-    print(f"Please ensure '{CREDENTIALS_PATH}' exists in your backend directory.")
-    exit()
-
-try:
-    cred = credentials.Certificate(CREDENTIALS_PATH)
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("Firebase Admin SDK successfully initialized.")
-except Exception as e:
-    print(f"FATAL ERROR: Failed to initialize Firebase Admin SDK: {e}")
-    exit()
-
+db = initialize_firebase()
 
 # ----------------------------------------------------------
 # 3. Basic & Secure Test Routes
@@ -67,7 +87,8 @@ def status():
     return jsonify({
         "status": "API Running",
         "service": "Near Dukaan Backend",
-        "firebase_connection": db_status
+        "firebase_connection": db_status,
+        "environment": os.getenv("FLASK_ENV", "production")
     })
 
 @app.route('/api/secure/test', methods=['GET'])
@@ -83,7 +104,6 @@ def secure_test():
         "email": shopkeeper_email,
         "token_payload_source": "Firebase Verified JWT"
     }), 200
-
 
 # ----------------------------------------------------------
 # 4. Customer Management API Routes (/api/customers)
@@ -123,7 +143,6 @@ def add_customer():
         print(f"Error adding customer: {e}")
         return jsonify({"error": "Internal server error."}), 500
 
-
 @app.route('/api/customers', methods=['GET'])
 @verify_token
 def get_customers():
@@ -146,7 +165,6 @@ def get_customers():
     except Exception as e:
         print(f"Error retrieving customers: {e}")
         return jsonify({"error": "Internal server error."}), 500
-
 
 @app.route('/api/customers/<customer_id>', methods=['GET', 'PUT', 'DELETE'])
 @verify_token
@@ -184,10 +202,8 @@ def handle_customer_detail(customer_id):
         return jsonify({"message": "Customer updated successfully."}), 200
 
     elif request.method == 'DELETE':
-        # NOTE: This should ideally also handle deleting related transactions/records.
         doc_ref.delete()
         return jsonify({"message": "Customer deleted successfully."}), 200
-
 
 # ----------------------------------------------------------
 # 5. Transaction Management API Routes (/api/transactions)
@@ -218,7 +234,7 @@ def add_transaction():
         transaction_data = {
             'shopId': shop_id,
             'customerId': customer_id,
-            'type': payment_type, # 'credit' (purchase) or 'payment' (paid off dues)
+            'type': payment_type,
             'amount': total_amount,
             'items': data.get('items', []),
             'notes': data.get('notes', ''),
@@ -231,7 +247,7 @@ def add_transaction():
         elif payment_type == 'payment':
             balance_change = -total_amount
         else:
-            balance_change = 0 # Example: 'cash' purchase doesn't affect dues
+            balance_change = 0
 
         # Firestore transactional safety
         @firestore.transactional
@@ -241,7 +257,6 @@ def add_transaction():
             current_total_spent = snapshot.get('total_spent') or 0.0
             
             new_balance = current_balance + balance_change
-            # Track total value (spent is only incremented by purchases, not payments, for cleaner metric)
             if payment_type != 'payment':
                 new_total_spent = current_total_spent + total_amount
             else:
@@ -254,8 +269,6 @@ def add_transaction():
             })
 
         update_balance_transaction(db.transaction(), customer_ref)
-
-        # Save transaction
         db.collection('transactions').add(transaction_data)
 
         return jsonify({
@@ -266,7 +279,6 @@ def add_transaction():
     except Exception as e:
         print(f"Error recording transaction: {e}")
         return jsonify({"error": "Internal server error during transaction."}), 500
-
 
 @app.route('/api/transactions/<customer_id>', methods=['GET'])
 @verify_token
@@ -295,7 +307,6 @@ def get_customer_transactions(customer_id):
         print(f"Error retrieving transactions: {e}")
         return jsonify({"error": "Internal server error."}), 500
 
-
 # ----------------------------------------------------------
 # 6. Inventory Management API Routes (/api/inventory)
 # ----------------------------------------------------------
@@ -317,7 +328,7 @@ def add_inventory_item():
             'quantity': int(data['quantity']),
             'unitCost': float(data.get('unitCost', 0.0)),
             'sellingPrice': float(data['sellingPrice']),
-            'expiryDate': data.get('expiryDate', None), # Stored as string or None
+            'expiryDate': data.get('expiryDate', None),
             'createdAt': firestore.SERVER_TIMESTAMP,
             'updatedAt': firestore.SERVER_TIMESTAMP,
         }
@@ -332,7 +343,6 @@ def add_inventory_item():
     except Exception as e:
         print(f"Error adding inventory item: {e}")
         return jsonify({"error": "Internal server error."}), 500
-
 
 @app.route('/api/inventory', methods=['GET'])
 @verify_token
@@ -357,7 +367,6 @@ def get_inventory_list():
         print(f"Error retrieving inventory: {e}")
         return jsonify({"error": "Internal server error."}), 500
 
-
 @app.route('/api/inventory/<item_id>', methods=['GET', 'PUT', 'DELETE'])
 @verify_token
 def handle_inventory_detail(item_id):
@@ -371,7 +380,6 @@ def handle_inventory_detail(item_id):
 
     item_existing = doc.to_dict()
 
-    # Security Check
     if item_existing.get('shopId') != shop_id:
         return jsonify({"error": "Unauthorized access."}), 403
 
@@ -402,12 +410,9 @@ def handle_inventory_detail(item_id):
     elif request.method == 'DELETE':
         doc_ref.delete()
         return jsonify({"message": "Inventory item deleted successfully."}), 200
-    
-    return jsonify({"error": "Method not allowed."}), 405 # Added missing return for unhandled methods
-
 
 # ----------------------------------------------------------
-# 7. Analytics & Dashboard Metrics - ADDED HERE
+# 7. Analytics & Dashboard Metrics
 # ----------------------------------------------------------
 
 @app.route('/api/dashboard/metrics', methods=['GET'])
@@ -417,7 +422,7 @@ def get_dashboard_metrics():
     shop_id = request.shop_id
     
     try:
-        # 1. Total Outstanding Dues & Active Customer Count
+        # Total Outstanding Dues & Active Customer Count
         customers_ref = db.collection('customers')
         customers_stream = customers_ref.where(
             filter=FieldFilter('shopId', '==', shop_id)
@@ -431,7 +436,7 @@ def get_dashboard_metrics():
             active_customers += 1
             total_dues += customer.get('due_balance', 0.0)
 
-        # 2. Inventory Alerts (Low Stock & Expiry)
+        # Inventory Alerts
         inventory_ref = db.collection('inventory')
         inventory_stream = inventory_ref.where(
             filter=FieldFilter('shopId', '==', shop_id)
@@ -444,23 +449,21 @@ def get_dashboard_metrics():
             item = doc.to_dict()
             quantity = item.get('quantity', 0)
             
-            # Check Low Stock (Hardcoded threshold: 10 units)
             if quantity < 10:
                 low_stock_count += 1
             
-            # Check Expiry (Next 30 days)
             expiry_date_str = item.get('expiryDate')
             if expiry_date_str:
-                # Firestore date format is YYYY-MM-DD
-                expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
-                today = date.today()
-                days_until_expiry = (expiry_date - today).days
-                
-                if 0 <= days_until_expiry <= 30:
-                    expiry_alert_count += 1
+                try:
+                    expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+                    today = date.today()
+                    days_until_expiry = (expiry_date - today).days
+                    
+                    if 0 <= days_until_expiry <= 30:
+                        expiry_alert_count += 1
+                except ValueError:
+                    pass
 
-
-        # 3. Compile final metrics
         metrics = {
             "totalOutstandingDues": round(total_dues, 2),
             "activeCustomerCount": active_customers,
@@ -474,22 +477,19 @@ def get_dashboard_metrics():
         print(f"Error retrieving dashboard metrics: {e}")
         return jsonify({"error": "Internal server error during analytics."}), 500
 
+# ----------------------------------------------------------
+# 8. Health Check for Render
+# ----------------------------------------------------------
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Render."""
+    return jsonify({"status": "healthy"}), 200
 
 # ----------------------------------------------------------
-# 8. Main Execution
+# 9. Main Execution
 # ----------------------------------------------------------
 
 if __name__ == '__main__':
-    # Add a fallback for the database to ensure it's defined before app runs
-    try:
-        if 'db' not in locals() or 'db' not in globals():
-            db = firestore.client()
-    except:
-        pass # Ignore if initialization failed earlier
-
-    
-    # FIX: Added missing return for unhandled methods in customer detail handler
-    if app.url_map.bind('localhost').match('/api/customers/123')[0] == 'handle_customer_detail':
-        pass # This is just a conceptual check, ignore in actual file
-
-    app.run(debug=True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
